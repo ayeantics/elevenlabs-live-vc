@@ -1,5 +1,7 @@
 import cmd
 import os
+import argparse
+import sounddevice as sd
 from src.audio_handler import AudioHandler
 import colorama
 from dotenv import load_dotenv
@@ -22,14 +24,68 @@ Version: 1.0.0
 """
 
 
+def find_input_device(name_contains: str):
+    """Find input device index by partial name match."""
+    devices = sd.query_devices()
+    for i, dev in enumerate(devices):
+        if dev['max_input_channels'] > 0 and name_contains.lower() in dev['name'].lower():
+            return i, dev['name']
+    return None, None
+
+
+def select_input_device(args):
+    """Select input device based on command-line args or auto-detect."""
+    if args.wo_mic:
+        idx, name = find_input_device("wo mic")
+        if idx is not None:
+            print(f"{colorama.Fore.CYAN}Using WO Mic: {name}{colorama.Style.RESET_ALL}")
+            return idx
+        else:
+            print(f"{colorama.Fore.YELLOW}WO Mic not found, falling back to default{colorama.Style.RESET_ALL}")
+            return None
+    
+    if args.microphone:
+        idx, name = find_input_device("microphone array")
+        if idx is not None:
+            print(f"{colorama.Fore.CYAN}Using Microphone Array: {name}{colorama.Style.RESET_ALL}")
+            return idx
+        else:
+            print(f"{colorama.Fore.YELLOW}Microphone Array not found, falling back to default{colorama.Style.RESET_ALL}")
+            return None
+    
+    # Auto-detect: prefer WO Mic if available, else Microphone Array
+    idx, name = find_input_device("wo mic")
+    if idx is not None:
+        print(f"{colorama.Fore.CYAN}Auto-detected WO Mic: {name}{colorama.Style.RESET_ALL}")
+        return idx
+    
+    idx, name = find_input_device("microphone array")
+    if idx is not None:
+        print(f"{colorama.Fore.CYAN}Auto-detected Microphone: {name}{colorama.Style.RESET_ALL}")
+        return idx
+    
+    print(f"{colorama.Fore.YELLOW}Using default input device{colorama.Style.RESET_ALL}")
+    return None
+
+
+def list_input_devices():
+    """List all available input devices."""
+    print(f"\n{colorama.Fore.CYAN}Available Input Devices:{colorama.Style.RESET_ALL}")
+    devices = sd.query_devices()
+    for i, dev in enumerate(devices):
+        if dev['max_input_channels'] > 0:
+            print(f"  [{i}] {dev['name']}")
+    print()
+
+
 class ElevenlabsLiveVCCmd(cmd.Cmd):
     intro = f"""{colorama.Fore.GREEN}{banner}\n{
         description}{colorama.Style.RESET_ALL}\n"""
     prompt = f"{colorama.Fore.LIGHTBLUE_EX}(live-vc){colorama.Style.RESET_ALL}"
 
-    def __init__(self):
+    def __init__(self, input_device=None):
         super().__init__()
-        self.audio_handler = AudioHandler.from_env()
+        self.audio_handler = AudioHandler.from_env(input_device=input_device)
         
         # Start VAD mode if enabled
         if self.audio_handler.recorder.vad_enabled:
@@ -88,8 +144,19 @@ class ElevenlabsLiveVCCmd(cmd.Cmd):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="ElevenLabs Live Voice Changer")
+    parser.add_argument("--microphone", action="store_true", help="Use Microphone Array as input")
+    parser.add_argument("--wo-mic", action="store_true", help="Use WO Mic as input")
+    parser.add_argument("--list-devices", action="store_true", help="List available input devices and exit")
+    args = parser.parse_args()
+    
+    if args.list_devices:
+        list_input_devices()
+        exit(0)
+    
     try:
-        ElevenlabsLiveVCCmd().cmdloop()
+        input_device = select_input_device(args)
+        ElevenlabsLiveVCCmd(input_device=input_device).cmdloop()
     except KeyboardInterrupt:
         print("\nExiting gracefully...")
         exit(0)

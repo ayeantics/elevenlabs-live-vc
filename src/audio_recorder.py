@@ -37,8 +37,8 @@ class AudioRecorder:
         self.pre_buffer = deque(maxlen=self.pre_buffer_chunks)
 
     @classmethod
-    def from_env(cls):
-        return cls(AudioSettings.from_env())
+    def from_env(cls, input_device=None):
+        return cls(AudioSettings.from_env(input_device=input_device))
 
     def set_vad_callback(self, callback):
         """Set callback function to be called when VAD detects end of speech."""
@@ -123,7 +123,8 @@ class AudioRecorder:
                 callback=self.callback,
                 channels=self.settings.channels,
                 samplerate=self.settings.sample_rate,
-                dtype='float32'
+                dtype='float32',
+                device=self.settings.input_device
             )
             self.stream.start()
             
@@ -156,7 +157,8 @@ class AudioRecorder:
                 callback=self.callback,
                 channels=self.settings.channels,
                 samplerate=self.settings.sample_rate,
-                dtype='float32'
+                dtype='float32',
+                device=self.settings.input_device
             )
             self.stream.start()
             

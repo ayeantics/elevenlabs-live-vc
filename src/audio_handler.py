@@ -27,9 +27,9 @@ class AudioHandler:
         self._start_cleanup_thread()
 
     @classmethod
-    def from_env(cls):
+    def from_env(cls, input_device=None):
         return cls(
-            AudioRecorder.from_env(),
+            AudioRecorder.from_env(input_device=input_device),
             AudioProcessor.from_env(),
             ElevenLabsClient.from_env()
         )
