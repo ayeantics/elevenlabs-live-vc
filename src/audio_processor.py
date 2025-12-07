@@ -14,6 +14,8 @@ class AudioProcessor:
         return cls(AudioSettings.from_env())
 
     def get_audio_stream(self, audio_data: np.ndarray) -> BytesIO:
+        if not audio_data or len(audio_data) == 0:
+            return None
         audio_data = np.concatenate(audio_data, axis=0)
         audio_data_pcm = (audio_data * 32767).astype(np.int16)
         wav_memory = BytesIO()

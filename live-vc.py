@@ -30,6 +30,10 @@ class ElevenlabsLiveVCCmd(cmd.Cmd):
     def __init__(self):
         super().__init__()
         self.audio_handler = AudioHandler.from_env()
+        
+        # Start VAD mode if enabled
+        if self.audio_handler.recorder.vad_enabled:
+            self.audio_handler.start_vad_mode()
 
     def do_clear(self, arg=None):
         """Clear the screen."""
@@ -54,12 +58,23 @@ class ElevenlabsLiveVCCmd(cmd.Cmd):
                         colorama.Style.RESET_ALL}"
                 )
                 return
+            
+            # Stop current recording if active
+            if self.audio_handler.recorder.is_recording:
+                self.audio_handler.recorder.stop()
+            
             self.audio_handler.recorder.settings.mode = mode
-            mode_str = "automatic" if self.audio_handler.recorder.settings.mode == 1 else "manual"
+            self.audio_handler.recorder.vad_enabled = (mode == 1)
+            mode_str = "automatic (VAD)" if mode == 1 else "manual (press space)"
             print(
                 f"{colorama.Fore.GREEN}Mode set to {mode_str}.{
                     colorama.Style.RESET_ALL}"
             )
+            
+            # Start VAD if switching to automatic
+            if mode == 1:
+                self.audio_handler.start_vad_mode()
+                
         except ValueError:
             print(
                 f"{colorama.Fore.YELLOW}Invalid input. Please enter 0 for manual or 1 for automatic.{
@@ -68,7 +83,7 @@ class ElevenlabsLiveVCCmd(cmd.Cmd):
 
     def do_get_mode(self, arg):
         """Get the current mode (1 = automatic, 0 = manual)."""
-        mode_str = "automatic" if self.audio_handler.recorder.settings.mode == 1 else "manual"
+        mode_str = "automatic (VAD)" if self.audio_handler.recorder.settings.mode == 1 else "manual (press space)"
         print(f"Current mode is {mode_str}.")
 
 
