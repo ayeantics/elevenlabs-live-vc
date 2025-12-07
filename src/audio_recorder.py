@@ -18,7 +18,7 @@ class AudioRecorder:
         # VAD settings
         self.vad_enabled = settings.mode == 1  # mode 1 = automatic
         self.silence_threshold = 0.015  # RMS threshold for voice detection (lowered for sensitivity)
-        self.silence_duration = 1.2  # Seconds of silence before stopping
+        self.silence_duration = 0.8  # Seconds of silence before stopping (reduced from 1.2)
         self.min_recording_duration = 0.3  # Minimum recording length in seconds
         self.pre_buffer_duration = 0.5  # Seconds of audio to keep before voice detected
         

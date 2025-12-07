@@ -59,58 +59,75 @@ class ElevenLabsClient:
         return np.interp(indices, np.arange(len(samples)), samples).astype(np.float32)
 
     def convert_audio(self, audio: BytesIO):
-        """Convert audio using ElevenLabs and play to VB-Cable with streaming."""
+        """Convert audio using ElevenLabs and stream playback immediately."""
         try:
+            import time
+            start_time = time.time()
             print(f"{colorama.Fore.CYAN}Sending to API...{colorama.Style.RESET_ALL}", end=" ", flush=True)
             
             # Use PCM format for instant decoding (no MP3 decode overhead)
+            # The convert method already returns a streaming generator
             audio_stream = self.client.speech_to_speech.convert(
                 voice_id=self.voice_id,
                 audio=audio,
                 model_id=self.model_id,
                 output_format="pcm_22050",  # Raw PCM - no decode needed
-                remove_background_noise=True,
+                # NOTE: remove_background_noise=True adds 5+ seconds of latency!
+                remove_background_noise=False,
+                optimize_streaming_latency=4,  # Max latency optimization (deprecated but may help)
             )
             
-            # Collect chunks with progress indicator
-            audio_chunks = []
+            # Collect and resample chunks, then stream with minimal delay
+            first_chunk_time = None
             chunk_count = 0
+            all_samples = []
+            all_audio_bytes = []
+            
             for chunk in audio_stream:
                 if chunk:
-                    audio_chunks.append(chunk)
+                    if first_chunk_time is None:
+                        first_chunk_time = time.time()
+                        latency = (first_chunk_time - start_time) * 1000
+                        print(f"{colorama.Fore.GREEN}First chunk in {latency:.0f}ms{colorama.Style.RESET_ALL}", end=" ", flush=True)
+                    
+                    # Immediately convert and resample each chunk
+                    samples = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0
+                    resampled = self._resample(samples, self.api_sample_rate, self.output_sample_rate)
+                    all_samples.append(resampled)
+                    all_audio_bytes.append(chunk)
                     chunk_count += 1
-                    if chunk_count % 10 == 0:
-                        print(".", end="", flush=True)
+                    
+                    # Start playback after first few chunks to avoid underrun
+                    if chunk_count == 3 and len(all_samples) > 0:
+                        # Combine what we have so far and start playing
+                        initial_audio = np.concatenate(all_samples)
+                        print(f"(streaming...)", end=" ", flush=True)
+                        sd.play(initial_audio, samplerate=self.output_sample_rate, device=self.output_device)
+                        all_samples = []  # Clear, we'll append remaining
             
-            print(f" {len(audio_chunks)} chunks", flush=True)
+            # If we started early, queue remaining audio
+            if chunk_count > 3 and len(all_samples) > 0:
+                remaining = np.concatenate(all_samples)
+                # Wait for initial playback, then play rest
+                sd.wait()
+                if len(remaining) > 0:
+                    sd.play(remaining, samplerate=self.output_sample_rate, device=self.output_device)
+                    sd.wait()
+            elif len(all_samples) > 0:
+                # Short audio - play all at once
+                all_audio = np.concatenate(all_samples)
+                print(f"(playing...)", end=" ", flush=True)
+                sd.play(all_audio, samplerate=self.output_sample_rate, device=self.output_device)
+                sd.wait()
+            else:
+                sd.wait()  # Wait for any ongoing playback
             
-            if not audio_chunks:
-                print(f"{colorama.Fore.RED}No audio received{colorama.Style.RESET_ALL}")
-                return
-            
-            # Combine chunks - PCM is raw 16-bit signed integers
-            audio_bytes = b''.join(audio_chunks)
-            
-            # Convert PCM bytes to numpy array (16-bit signed, little-endian)
-            samples = np.frombuffer(audio_bytes, dtype=np.int16)
-            
-            # Normalize to float32
-            samples = samples.astype(np.float32) / 32768.0
-            
-            # Resample 22050Hz -> 48000Hz for VB-Cable
-            samples = self._resample(samples, self.api_sample_rate, self.output_sample_rate)
-            
-            duration = len(samples) / self.output_sample_rate
-            print(f"{colorama.Fore.GREEN}Playing ({duration:.1f}s)...{colorama.Style.RESET_ALL}", end=" ", flush=True)
-            
-            # Play to VB-Cable
-            sd.play(samples, samplerate=self.output_sample_rate, device=self.output_device)
-            sd.wait()
-            
-            print(f"{colorama.Fore.GREEN}Done!{colorama.Style.RESET_ALL}")
+            total_time = (time.time() - start_time) * 1000
+            print(f"{colorama.Fore.GREEN}Done! ({chunk_count} chunks, {total_time:.0f}ms){colorama.Style.RESET_ALL}")
             
             # Save for debugging (optional, in background)
-            self._save_debug_audio(audio_bytes)
+            if all_audio_bytes:
+                self._save_debug_audio(b''.join(all_audio_bytes))
             
         except Exception as e:
             print(f"{colorama.Fore.RED}Error: {type(e).__name__}: {e}{colorama.Style.RESET_ALL}")
